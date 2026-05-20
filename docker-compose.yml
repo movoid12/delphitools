@@ -13,15 +13,9 @@ services:
     image: delphitools:latest
     container_name: delphitools-app
     
-    # Port mappings
+    # Port mappings (host:container) - serve static site via nginx (container port 80)
     ports:
-      - "3000:3000"
-    
-    # Environment variables
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOST: 0.0.0.0
+      - "3000:80"
     
     # Automatic restart on failure
     restart: unless-stopped
@@ -36,9 +30,9 @@ services:
           cpus: '0.5'
           memory: 256M
     
-    # Health check using Bun
+    # Health check using wget inside the nginx container
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -54,9 +48,6 @@ services:
     # Security options
     security_opt:
       - no-new-privileges:true
-    
-    # Run as non-root user (bun user from oven/bun image)
-    user: "1000:1000"
 
 # Networks
 networks:

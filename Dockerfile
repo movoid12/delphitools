@@ -6,7 +6,6 @@ WORKDIR /app
 COPY package.json bun.lock* bun.lockb* package-lock.json* yarn.lock* ./
 
 # Install dependencies using Bun
-# Bun supports multiple lockfile formats and can work with npm/yarn/pnpm files
 RUN bun install --frozen-lockfile || bun install
 
 # Stage 2: Builder
@@ -16,38 +15,26 @@ WORKDIR /app
 # Copy source code
 COPY . .
 
-# Build the Next.js application
-RUN bun run build
+# Build the Next.js application and export static files
+# `next export` will output the static site into `/app/out`
+RUN bun run build && ./node_modules/.bin/next export
 
-# Stage 3: Production Runtime
-FROM oven/bun:latest AS runner
-WORKDIR /app
+# Stage 3: Production Runtime - serve static files with nginx
+FROM nginx:alpine AS runner
+WORKDIR /usr/share/nginx/html
 
-# Set environment variables
-ENV NODE_ENV=production
-ENV HOST=0.0.0.0
-ENV PORT=3000
+# Remove default nginx content
+RUN rm -rf ./*
 
-# Copy package.json
-COPY --from=builder /app/package.json ./package.json
+# Copy exported static site
+COPY --from=builder /app/out /usr/share/nginx/html
 
-# Copy node_modules from builder for faster layer
-COPY --from=builder /app/node_modules ./node_modules
+# Expose HTTP port
+EXPOSE 80
 
-# Copy built application from builder stage
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-
-# Use existing 'bun' user already in the image for security
-# The oven/bun image includes a non-root 'bun' user by default
-USER bun
-
-# Expose port
-EXPOSE 3000
-
-# Health check
+# Health check (inside container)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD bun -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
+    CMD wget -qO- http://127.0.0.1/ >/dev/null || exit 1
 
-# Start the application
-CMD ["bun", "run", "start"]
+# Start nginx (default CMD is retained)
+CMD ["nginx", "-g", "daemon off;"]
